@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"github.com/webstudiobond/crowdsec-cloudflare-list-bouncer/internal/bouncer"
@@ -43,8 +44,8 @@ type daemonRunner interface {
 	Run(ctx context.Context) error
 }
 
-func defaultNewCrowdSecClient(apiURL, apiKey, version string, httpClient *http.Client) crowdsecChecker {
-	return crowdsec.NewClient(apiURL, apiKey, version, httpClient)
+func defaultNewCrowdSecClient(apiURL, apiKey, version string, origins []string, httpClient *http.Client) crowdsecChecker {
+	return crowdsec.NewClient(apiURL, apiKey, version, origins, httpClient)
 }
 
 func defaultNewCloudflareClient(token string, httpClient *http.Client) cloudflareChecker {
@@ -127,7 +128,7 @@ func setupLogger(level slog.Level, logType string, out io.Writer) *slog.Logger {
 func runTestMode(ctx context.Context, cfg *config.MainConfig, logger *slog.Logger) error {
 	logger.Info("validating configuration syntax and targets", "targets_count", len(cfg.Targets))
 
-	csClient := newCrowdSecClient(cfg.APIURL, cfg.APIKey, Version, nil)
+	csClient := newCrowdSecClient(cfg.APIURL, cfg.APIKey, Version, nil, nil)
 	if err := csClient.TestConnection(ctx); err != nil {
 		logger.Error("CrowdSec LAPI connection failed", "url", cfg.APIURL, "error", err)
 		return fmt.Errorf("crowdsec connection failed: %w", err)
@@ -157,7 +158,21 @@ func runTestMode(ctx context.Context, cfg *config.MainConfig, logger *slog.Logge
 }
 
 func runDaemon(ctx context.Context, cfg *config.MainConfig, logger *slog.Logger) error {
-	csClient := newCrowdSecClient(cfg.APIURL, cfg.APIKey, Version, nil)
+	// Collect the union of all targets' allowed origins so LAPI only
+	// returns decisions matching configured origins, reducing payload size.
+	originSet := make(map[string]struct{})
+	for i := range cfg.Targets {
+		for _, o := range cfg.Targets[i].AllowedOrigins {
+			originSet[o] = struct{}{}
+		}
+	}
+	origins := make([]string, 0, len(originSet))
+	for o := range originSet {
+		origins = append(origins, o)
+	}
+	slices.Sort(origins)
+
+	csClient := newCrowdSecClient(cfg.APIURL, cfg.APIKey, Version, origins, nil)
 	factory := func(token string) bouncer.CloudflareListManager {
 		return newCloudflareClient(token, nil)
 	}

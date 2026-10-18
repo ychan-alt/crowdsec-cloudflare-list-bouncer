@@ -143,7 +143,7 @@ func TestStreamDecisions(t *testing.T) {
 			})
 
 			httpClient := &http.Client{Transport: mockTransport}
-			client := crowdsec.NewClient("http://127.0.0.1:8080", "dummy-lapi-auth-key", "test-version", httpClient)
+			client := crowdsec.NewClient("http://127.0.0.1:8080", "dummy-lapi-auth-key", "test-version", nil, httpClient)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
@@ -187,7 +187,7 @@ func TestStreamDecisionsRetry(t *testing.T) {
 	})
 
 	httpClient := &http.Client{Transport: mockTransport}
-	client := crowdsec.NewClient("http://127.0.0.1:8080", "retry-test-key", "0.0.0-test", httpClient)
+	client := crowdsec.NewClient("http://127.0.0.1:8080", "retry-test-key", "0.0.0-test", nil, httpClient)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -236,7 +236,7 @@ func TestConnection(t *testing.T) {
 			})
 
 			httpClient := &http.Client{Transport: mockTransport}
-			client := crowdsec.NewClient("http://127.0.0.1:8080", "test-key", "0.0.0-test", httpClient)
+			client := crowdsec.NewClient("http://127.0.0.1:8080", "test-key", "0.0.0-test", nil, httpClient)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
@@ -264,12 +264,12 @@ func TestAPIError_Error(t *testing.T) {
 func TestNewClient_DefaultTransportAndEmptyVersion(t *testing.T) {
 	t.Parallel()
 
-	client := crowdsec.NewClient("http://127.0.0.1:8080", "default-cs-key", "", nil)
+	client := crowdsec.NewClient("http://127.0.0.1:8080", "default-cs-key", "", nil, nil)
 	if client == nil {
 		t.Fatalf("expected non-nil client")
 	}
 
-	clientTrailing := crowdsec.NewClient("http://127.0.0.1:8080/", "default-cs-key-alt", "1.0.0", nil)
+	clientTrailing := crowdsec.NewClient("http://127.0.0.1:8080/", "default-cs-key-alt", "1.0.0", nil, nil)
 	if clientTrailing == nil {
 		t.Fatalf("expected non-nil clientTrailing")
 	}
@@ -315,7 +315,7 @@ func TestStreamDecisions_EdgeCases(t *testing.T) {
 			t.Parallel()
 
 			httpClient := &http.Client{Transport: tc.transport}
-			client := crowdsec.NewClient("http://127.0.0.1:8080", "edge-stream-key", "0.0.1", httpClient)
+			client := crowdsec.NewClient("http://127.0.0.1:8080", "edge-stream-key", "0.0.1", nil, httpClient)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
@@ -330,7 +330,7 @@ func TestStreamDecisions_EdgeCases(t *testing.T) {
 func TestTestConnection_EdgeCases(t *testing.T) {
 	t.Parallel()
 
-	badURLClient := crowdsec.NewClient("http://127.0.0.1:8080/\x7f", "bad-url-key", "0.0.1", nil)
+	badURLClient := crowdsec.NewClient("http://127.0.0.1:8080/\x7f", "bad-url-key", "0.0.1", nil, nil)
 	if err := badURLClient.TestConnection(context.Background()); err == nil {
 		t.Fatalf("expected url parse error, got nil")
 	}
@@ -338,7 +338,7 @@ func TestTestConnection_EdgeCases(t *testing.T) {
 	failTransport := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		return nil, errors.New("simulated dial failure")
 	})
-	failClient := crowdsec.NewClient("http://127.0.0.1:8080", "fail-dial-key", "0.0.1", &http.Client{Transport: failTransport})
+	failClient := crowdsec.NewClient("http://127.0.0.1:8080", "fail-dial-key", "0.0.1", nil, &http.Client{Transport: failTransport})
 	if err := failClient.TestConnection(context.Background()); err == nil {
 		t.Fatalf("expected dial failure error, got nil")
 	}
@@ -350,7 +350,7 @@ func TestTestConnection_EdgeCases(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	})
-	closeFailClient := crowdsec.NewClient("http://127.0.0.1:8080", "close-fail-key", "0.0.1", &http.Client{Transport: closeFailTransport})
+	closeFailClient := crowdsec.NewClient("http://127.0.0.1:8080", "close-fail-key", "0.0.1", nil, &http.Client{Transport: closeFailTransport})
 	if err := closeFailClient.TestConnection(context.Background()); err == nil {
 		t.Fatalf("expected body close error, got nil")
 	}
@@ -362,7 +362,7 @@ func TestTestConnection_EdgeCases(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	})
-	readErrClient := crowdsec.NewClient("http://127.0.0.1:8080", "read-err-key", "0.0.1", &http.Client{Transport: readErrTransport})
+	readErrClient := crowdsec.NewClient("http://127.0.0.1:8080", "read-err-key", "0.0.1", nil, &http.Client{Transport: readErrTransport})
 	err := readErrClient.TestConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected error from non-200 with read error, got nil")
@@ -379,7 +379,7 @@ func TestTestConnection_EdgeCases(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	})
-	msgClient := crowdsec.NewClient("http://127.0.0.1:8080", "msg-key", "0.0.1", &http.Client{Transport: msgTransport})
+	msgClient := crowdsec.NewClient("http://127.0.0.1:8080", "msg-key", "0.0.1", nil, &http.Client{Transport: msgTransport})
 	err = msgClient.TestConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected error from bad request, got nil")
@@ -388,3 +388,83 @@ func TestTestConnection_EdgeCases(t *testing.T) {
 		t.Fatalf("expected specific reason message, got %v", apiErr)
 	}
 }
+
+func TestStreamDecisions_OriginsQueryParam(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		origins     []string
+		startup     bool
+		wantQuery   string
+		wantOrigins string
+		wantStartup string
+	}{
+		{
+			name:        "with origins and startup true",
+			origins:     []string{"cscli", "crowdsec"},
+			startup:     true,
+			wantOrigins: "cscli,crowdsec",
+			wantStartup: "true",
+		},
+		{
+			name:        "with origins and startup false",
+			origins:     []string{"crowdsec"},
+			startup:     false,
+			wantOrigins: "crowdsec",
+			wantStartup: "",
+		},
+		{
+			name:        "nil origins and startup false",
+			origins:     nil,
+			startup:     false,
+			wantOrigins: "",
+			wantStartup: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var capturedURL string
+			mockTransport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				capturedURL = r.URL.String()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"new":[],"deleted":[]}`)),
+					Header:     make(http.Header),
+				}, nil
+			})
+
+			client := crowdsec.NewClient("http://127.0.0.1:8080", "test-key", "0.0.1", tc.origins, &http.Client{Transport: mockTransport})
+			_, err := client.StreamDecisions(context.Background(), tc.startup)
+			if err != nil {
+				t.Fatalf("StreamDecisions() unexpected error: %v", err)
+			}
+
+			parsedURL, parseErr := http.NewRequestWithContext(context.Background(), http.MethodGet, capturedURL, nil)
+			if parseErr != nil {
+				t.Fatalf("failed to parse captured URL: %v", parseErr)
+			}
+			query := parsedURL.URL.Query()
+
+			if tc.wantOrigins != "" {
+				if got := query.Get("origins"); got != tc.wantOrigins {
+					t.Errorf("origins param = %q, want %q", got, tc.wantOrigins)
+				}
+			} else if query.Has("origins") {
+				t.Errorf("expected no origins param, got %q", query.Get("origins"))
+			}
+
+			if tc.wantStartup != "" {
+				if got := query.Get("startup"); got != tc.wantStartup {
+					t.Errorf("startup param = %q, want %q", got, tc.wantStartup)
+				}
+			} else if query.Has("startup") {
+				t.Errorf("expected no startup param, got %q", query.Get("startup"))
+			}
+		})
+	}
+}
+

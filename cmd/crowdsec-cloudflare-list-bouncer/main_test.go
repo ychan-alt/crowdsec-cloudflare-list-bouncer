@@ -199,7 +199,7 @@ func TestRun(t *testing.T) {
 		newBouncer = origBouncer
 	}()
 
-	newCrowdSecClient = func(string, string, string, *http.Client) crowdsecChecker {
+	newCrowdSecClient = func(string, string, string, []string, *http.Client) crowdsecChecker {
 		return &mockCrowdSecClient{}
 	}
 	newCloudflareClient = func(string, *http.Client) cloudflareChecker {
@@ -372,7 +372,7 @@ func TestRunTestMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			newCrowdSecClient = func(string, string, string, *http.Client) crowdsecChecker {
+			newCrowdSecClient = func(string, string, string, []string, *http.Client) crowdsecChecker {
 				return &mockCrowdSecClient{testConnErr: tt.csErr}
 			}
 			newCloudflareClient = func(string, *http.Client) cloudflareChecker {
@@ -400,7 +400,7 @@ func TestRunDaemon(t *testing.T) {
 		newBouncer = origBouncer
 	}()
 
-	newCrowdSecClient = func(string, string, string, *http.Client) crowdsecChecker {
+	newCrowdSecClient = func(string, string, string, []string, *http.Client) crowdsecChecker {
 		return &mockCrowdSecClient{}
 	}
 	newCloudflareClient = func(string, *http.Client) cloudflareChecker {
@@ -450,8 +450,50 @@ func TestRunDaemon(t *testing.T) {
 	}
 }
 
+func TestRunDaemon_PassesTargetOrigins(t *testing.T) {
+	origCS := newCrowdSecClient
+	origBouncer := newBouncer
+	defer func() {
+		newCrowdSecClient = origCS
+		newBouncer = origBouncer
+	}()
+
+	var passedOrigins []string
+	newCrowdSecClient = func(url, key, ver string, origins []string, hc *http.Client) crowdsecChecker {
+		passedOrigins = origins
+		return &mockCrowdSecClient{}
+	}
+	newBouncer = func(_ *config.MainConfig, _ bouncer.CrowdSecStreamer, cf func(token string) bouncer.CloudflareListManager, _ *slog.Logger) daemonRunner {
+		return &mockDaemonRunnerWithFactory{}
+	}
+
+	cfg := &config.MainConfig{
+		Targets: []config.TargetConfig{
+			{AllowedOrigins: []string{"crowdsec", "cscli"}},
+			{AllowedOrigins: []string{"crowdsec", "custom-origin"}},
+		},
+	}
+	var buf bytes.Buffer
+	logger := setupLogger(slog.LevelInfo, "text", &buf)
+
+	if err := runDaemon(context.Background(), cfg, logger); err != nil {
+		t.Fatalf("runDaemon() unexpected error: %v", err)
+	}
+
+	wantOrigins := []string{"crowdsec", "cscli", "custom-origin"}
+	if len(passedOrigins) != len(wantOrigins) {
+		t.Fatalf("got origins %v, want %v", passedOrigins, wantOrigins)
+	}
+	for i := range wantOrigins {
+		if passedOrigins[i] != wantOrigins[i] {
+			t.Errorf("origin[%d] = %q, want %q", i, passedOrigins[i], wantOrigins[i])
+		}
+	}
+}
+
+
 func TestDefaultFactories(t *testing.T) {
-	cs := defaultNewCrowdSecClient("http://127.0.0.1:8080/", "test-key", "dev", nil)
+	cs := defaultNewCrowdSecClient("http://127.0.0.1:8080/", "test-key", "dev", nil, nil)
 	if cs == nil {
 		t.Fatal("expected non-nil crowdsec client")
 	}
